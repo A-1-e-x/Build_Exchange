@@ -261,14 +261,23 @@ async function indexMaterialImages(material, sellerId) {
     }
   }
 
-  // Update material document verificationSummary
+  // Update material document verificationSummary & isApproved
   if (results.length > 0) {
     try {
       const highestRisk = results.reduce(
         (prev, curr) => ((curr.riskScore || 0) > (prev.riskScore || 0) ? curr : prev),
         results[0]
       );
+
+      const isFlagged = [
+        'DUPLICATE_DETECTED',
+        'POSSIBLY_AI_GENERATED',
+        'POSSIBLY_DOWNLOADED',
+        'MANUAL_REVIEW_REQUIRED',
+      ].includes(highestRisk.verificationStatus);
+
       await Material.findByIdAndUpdate(material._id, {
+        ...(isFlagged ? { isApproved: false } : {}),
         verificationSummary: {
           status: highestRisk.verificationStatus || 'LIKELY_ORIGINAL',
           origin: highestRisk.imageOriginPrediction || 'camera_captured',

@@ -3,6 +3,13 @@ const ImageAnalysis = require('../models/ImageAnalysis');
 const { uploadImage, deleteImage } = require('../config/cloudinary');
 const { indexMaterialImages } = require('../services/aiImageService');
 
+const FLAGGED_VERIFICATION_STATUSES = [
+  'DUPLICATE_DETECTED',
+  'POSSIBLY_AI_GENERATED',
+  'POSSIBLY_DOWNLOADED',
+  'MANUAL_REVIEW_REQUIRED',
+];
+
 // @desc    Get all materials with dynamic search, multi-filter, sort & pagination
 // @route   GET /api/materials
 // @access  Public
@@ -23,7 +30,10 @@ const getMaterials = async (req, res, next) => {
       limit = 12,
     } = req.query;
 
-    const query = { isApproved: true };
+    const query = {
+      isApproved: true,
+      'verificationSummary.status': { $nin: FLAGGED_VERIFICATION_STATUSES },
+    };
 
     // Availability status filter (default to 'available' for public browse)
     if (status && status !== 'all') {
@@ -118,6 +128,7 @@ const getFeaturedMaterials = async (req, res, next) => {
     const materials = await Material.find({
       isApproved: true,
       status: 'available',
+      'verificationSummary.status': { $nin: FLAGGED_VERIFICATION_STATUSES },
     })
       .sort({ createdAt: -1 })
       .limit(8)
@@ -166,6 +177,27 @@ const getMaterialById = async (req, res, next) => {
         success: false,
         message: 'Material listing not found.',
       });
+    }
+
+    // Guard flagged or unapproved material from buyers/general public
+    const isFlagged = FLAGGED_VERIFICATION_STATUSES.includes(
+      material.verificationSummary?.status
+    );
+
+    if (!material.isApproved || isFlagged) {
+      const requesterId = req.user?._id?.toString();
+      const isAdmin = req.user?.role === 'admin';
+      const isOwner =
+        requesterId &&
+        (material.sellerId?._id?.toString() === requesterId ||
+          material.sellerId?.toString() === requesterId);
+
+      if (!isAdmin && !isOwner) {
+        return res.status(404).json({
+          success: false,
+          message: 'Material listing is currently under review or unavailable for browsing.',
+        });
+      }
     }
 
     // Increment view count asynchronously

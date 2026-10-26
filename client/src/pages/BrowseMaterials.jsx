@@ -74,7 +74,18 @@ const BrowseMaterials = () => {
 
         const res = await api.get(`/materials?${params.toString()}`);
         if (res.data) {
-          setMaterials(res.data.materials || []);
+          const rawMaterials = res.data.materials || [];
+          const cleanMaterials = rawMaterials.filter(
+            (m) =>
+              m.isApproved !== false &&
+              ![
+                'DUPLICATE_DETECTED',
+                'POSSIBLY_AI_GENERATED',
+                'POSSIBLY_DOWNLOADED',
+                'MANUAL_REVIEW_REQUIRED',
+              ].includes(m.verificationSummary?.status)
+          );
+          setMaterials(cleanMaterials);
           setTotal(res.data.total || 0);
           setTotalPages(res.data.totalPages || 1);
         }

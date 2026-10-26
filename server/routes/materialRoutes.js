@@ -10,7 +10,7 @@ const {
   deleteMaterial,
   toggleMaterialStatus,
 } = require('../controllers/materialController');
-const { protect, authorize } = require('../middleware/authMiddleware');
+const { protect, authorize, optionalAuth } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 
 router.get('/featured', getFeaturedMaterials);
@@ -28,7 +28,7 @@ router
 
 router
   .route('/:id')
-  .get(getMaterialById)
+  .get(optionalAuth, getMaterialById)
   .put(
     protect,
     authorize('seller', 'admin'),

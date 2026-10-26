@@ -156,7 +156,8 @@ const getFlaggedImages = async (req, res, next) => {
       // Legacy filter support
       query.result = result;
     } else {
-      // By default show all suspicious, duplicate, downloaded, or manual review items
+      // Show all suspicious, duplicate, downloaded, or manual review items,
+      // and any item with a confirmed flag or admin review
       query.$or = [
         {
           verificationStatus: {
@@ -169,6 +170,8 @@ const getFlaggedImages = async (req, res, next) => {
           },
         },
         { result: { $in: ['likely_duplicate', 'possible_duplicate', 'suspicious'] } },
+        { reviewStatus: 'confirmed' },
+        { reviewNotes: { $exists: true, $ne: '' } },
       ];
     }
 
@@ -247,6 +250,21 @@ const reviewFlaggedImage = async (req, res, next) => {
 
     if (overrideStatus) {
       analysis.verificationStatus = overrideStatus;
+    } else if (reviewStatus === 'confirmed' && analysis.verificationStatus === 'LIKELY_ORIGINAL') {
+      // If admin accepted/confirmed a flag on a photo initially classified as likely original,
+      // re-classify its verificationStatus so it is properly categorized as a flag
+      analysis.verificationStatus = 'MANUAL_REVIEW_REQUIRED';
+    } else if (reviewStatus === 'dismissed') {
+      analysis.verificationStatus = 'LIKELY_ORIGINAL';
+    }
+
+    // Keep legacy result field in sync
+    if (analysis.verificationStatus === 'LIKELY_ORIGINAL') {
+      analysis.result = 'no_match';
+    } else if (analysis.verificationStatus === 'DUPLICATE_DETECTED') {
+      analysis.result = 'likely_duplicate';
+    } else {
+      analysis.result = 'suspicious';
     }
 
     await analysis.save();
@@ -254,10 +272,27 @@ const reviewFlaggedImage = async (req, res, next) => {
     // If review status changes to confirmed or dismissed, sync with material if available
     if (analysis.materialId) {
       try {
-        await Material.findByIdAndUpdate(analysis.materialId, {
-          'verificationSummary.status': reviewStatus === 'dismissed' ? 'LIKELY_ORIGINAL' : analysis.verificationStatus,
-        });
-      } catch (matErr) {}
+        const isFlagged = [
+          'DUPLICATE_DETECTED',
+          'POSSIBLY_AI_GENERATED',
+          'POSSIBLY_DOWNLOADED',
+          'MANUAL_REVIEW_REQUIRED',
+        ].includes(analysis.verificationStatus);
+
+        const updateData = {
+          'verificationSummary.status': analysis.verificationStatus,
+          isApproved: reviewStatus === 'dismissed' ? true : (reviewStatus === 'confirmed' ? false : !isFlagged),
+        };
+
+        if (reviewStatus === 'dismissed') {
+          updateData['verificationSummary.duplicateMatch'] = false;
+          updateData['verificationSummary.riskScore'] = 0;
+        }
+
+        await Material.findByIdAndUpdate(analysis.materialId, updateData);
+      } catch (matErr) {
+        console.warn('Could not sync material verification summary:', matErr.message);
+      }
     }
 
     res.json({

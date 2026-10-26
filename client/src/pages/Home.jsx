@@ -39,7 +39,18 @@ const Home = () => {
           setCategories(catRes.data.categories);
         }
         if (matRes.data && matRes.data.materials) {
-          setFeaturedMaterials(matRes.data.materials);
+          const rawFeatured = matRes.data.materials || [];
+          const cleanFeatured = rawFeatured.filter(
+            (m) =>
+              m.isApproved !== false &&
+              ![
+                'DUPLICATE_DETECTED',
+                'POSSIBLY_AI_GENERATED',
+                'POSSIBLY_DOWNLOADED',
+                'MANUAL_REVIEW_REQUIRED',
+              ].includes(m.verificationSummary?.status)
+          );
+          setFeaturedMaterials(cleanFeatured);
         }
       } catch (err) {
         console.error('Error fetching home data:', err);

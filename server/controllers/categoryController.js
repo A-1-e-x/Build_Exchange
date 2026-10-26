@@ -8,9 +8,22 @@ const getCategories = async (req, res, next) => {
   try {
     const categories = await Category.find().sort({ name: 1 });
 
-    // Aggregate counts of available materials per category
+    // Aggregate counts of available non-flagged materials per category
     const materialCounts = await Material.aggregate([
-      { $match: { isApproved: true, status: 'available' } },
+      {
+        $match: {
+          isApproved: true,
+          status: 'available',
+          'verificationSummary.status': {
+            $nin: [
+              'DUPLICATE_DETECTED',
+              'POSSIBLY_AI_GENERATED',
+              'POSSIBLY_DOWNLOADED',
+              'MANUAL_REVIEW_REQUIRED',
+            ],
+          },
+        },
+      },
       { $group: { _id: '$category', count: { $sum: 1 } } },
     ]);
 

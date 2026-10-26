@@ -43,7 +43,7 @@ const AdminImageMonitoring = () => {
 
   // Filters
   const [verificationFilter, setVerificationFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('not_reviewed');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   // Review Modal State
   const [selectedItem, setSelectedItem] = useState(null);
@@ -126,10 +126,24 @@ const AdminImageMonitoring = () => {
 
     try {
       setSubmittingReview(true);
+      let targetOverride = overrideStatus;
+      if (
+        (!targetOverride || targetOverride === selectedItem.verificationStatus) &&
+        reviewAction === 'confirmed' &&
+        selectedItem.verificationStatus === 'LIKELY_ORIGINAL'
+      ) {
+        targetOverride = 'MANUAL_REVIEW_REQUIRED';
+      } else if (reviewAction === 'dismissed') {
+        targetOverride = 'LIKELY_ORIGINAL';
+      }
+
       const res = await api.patch(`/ai/${selectedItem._id}/review`, {
         reviewStatus: reviewAction,
         reviewNotes,
-        overrideStatus: overrideStatus !== selectedItem.verificationStatus ? overrideStatus : undefined,
+        overrideStatus:
+          targetOverride && targetOverride !== selectedItem.verificationStatus
+            ? targetOverride
+            : undefined,
       });
 
       showToast(res.data?.message || 'Review status saved.', 'success');
@@ -146,10 +160,18 @@ const AdminImageMonitoring = () => {
 
   const handleQuickStatus = async (item, status) => {
     try {
-      const res = await api.patch(`/ai/${item._id}/review`, {
+      const payload = {
         reviewStatus: status,
         reviewNotes: `Quick action: marked as ${status} from monitoring panel.`,
-      });
+      };
+
+      if (status === 'confirmed' && item.verificationStatus === 'LIKELY_ORIGINAL') {
+        payload.overrideStatus = 'MANUAL_REVIEW_REQUIRED';
+      } else if (status === 'dismissed') {
+        payload.overrideStatus = 'LIKELY_ORIGINAL';
+      }
+
+      const res = await api.patch(`/ai/${item._id}/review`, payload);
       showToast(`Flag updated to ${status}.`, 'success');
       fetchStats();
       fetchFlagged(currentPage);
@@ -212,42 +234,97 @@ const AdminImageMonitoring = () => {
 
       {/* Stats Cards Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard
-          title="Total Scans"
-          value={stats?.totalAnalyses ?? '...'}
-          icon={Layers}
-          color="slate"
-        />
-        <StatCard
-          title="Duplicates"
-          value={stats?.duplicateCount ?? stats?.likelyDuplicates ?? '...'}
-          icon={AlertTriangle}
-          color="rose"
-        />
-        <StatCard
-          title="AI-Generated"
-          value={stats?.aiGeneratedCount ?? 0}
-          icon={Cpu}
-          color="purple"
-        />
-        <StatCard
-          title="Web Downloads"
-          value={stats?.downloadedCount ?? 0}
-          icon={Globe}
-          color="amber"
-        />
-        <StatCard
-          title="Pending Review"
-          value={stats?.pendingReview ?? '...'}
-          icon={Clock}
-          color="amber"
-        />
-        <StatCard
-          title="Confirmed Flags"
-          value={stats?.confirmedDuplicates ?? '...'}
-          icon={ShieldAlert}
-          color="rose"
-        />
+        <div
+          onClick={() => {
+            setVerificationFilter('all');
+            setStatusFilter('all');
+            setCurrentPage(1);
+          }}
+          className="cursor-pointer hover:scale-[1.02] transition-transform"
+          title="Show All Images & Flags"
+        >
+          <StatCard
+            title="Total Scans"
+            value={stats?.totalAnalyses ?? '...'}
+            icon={Layers}
+            color="slate"
+          />
+        </div>
+        <div
+          onClick={() => {
+            setVerificationFilter('DUPLICATE_DETECTED');
+            setCurrentPage(1);
+          }}
+          className="cursor-pointer hover:scale-[1.02] transition-transform"
+          title="Filter by Duplicates"
+        >
+          <StatCard
+            title="Duplicates"
+            value={stats?.duplicateCount ?? stats?.likelyDuplicates ?? '...'}
+            icon={AlertTriangle}
+            color="rose"
+          />
+        </div>
+        <div
+          onClick={() => {
+            setVerificationFilter('POSSIBLY_AI_GENERATED');
+            setCurrentPage(1);
+          }}
+          className="cursor-pointer hover:scale-[1.02] transition-transform"
+          title="Filter by AI Generated"
+        >
+          <StatCard
+            title="AI-Generated"
+            value={stats?.aiGeneratedCount ?? 0}
+            icon={Cpu}
+            color="purple"
+          />
+        </div>
+        <div
+          onClick={() => {
+            setVerificationFilter('POSSIBLY_DOWNLOADED');
+            setCurrentPage(1);
+          }}
+          className="cursor-pointer hover:scale-[1.02] transition-transform"
+          title="Filter by Web Downloads"
+        >
+          <StatCard
+            title="Web Downloads"
+            value={stats?.downloadedCount ?? 0}
+            icon={Globe}
+            color="amber"
+          />
+        </div>
+        <div
+          onClick={() => {
+            setStatusFilter('not_reviewed');
+            setCurrentPage(1);
+          }}
+          className="cursor-pointer hover:scale-[1.02] transition-transform"
+          title="Filter by Pending Review"
+        >
+          <StatCard
+            title="Pending Review"
+            value={stats?.pendingReview ?? '...'}
+            icon={Clock}
+            color="amber"
+          />
+        </div>
+        <div
+          onClick={() => {
+            setStatusFilter('confirmed');
+            setCurrentPage(1);
+          }}
+          className="cursor-pointer hover:scale-[1.02] transition-transform"
+          title="Filter by Confirmed Flags"
+        >
+          <StatCard
+            title="Confirmed Flags"
+            value={stats?.confirmedDuplicates ?? '...'}
+            icon={ShieldAlert}
+            color="rose"
+          />
+        </div>
       </div>
 
       {/* Filter Toolbar */}
@@ -799,6 +876,24 @@ const AdminImageMonitoring = () => {
                       <span>{act.label}</span>
                     </label>
                   ))}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700">
+                    Override Verification Signal (Optional):
+                  </label>
+                  <select
+                    value={overrideStatus}
+                    onChange={(e) => setOverrideStatus(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-xl p-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
+                  >
+                    <option value="">Keep Detected Signal ({selectedItem.verificationStatus || 'LIKELY_ORIGINAL'})</option>
+                    <option value="DUPLICATE_DETECTED">Duplicate Detected</option>
+                    <option value="POSSIBLY_AI_GENERATED">AI Generated</option>
+                    <option value="POSSIBLY_DOWNLOADED">Web Downloaded</option>
+                    <option value="MANUAL_REVIEW_REQUIRED">Manual Review Required</option>
+                    <option value="LIKELY_ORIGINAL">Likely Original</option>
+                  </select>
                 </div>
 
                 <div className="space-y-1.5">
