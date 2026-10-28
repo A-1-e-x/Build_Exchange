@@ -31,10 +31,19 @@ const register = async (req, res, next) => {
       pincode,
     } = req.body;
 
-    if (!name || !email || !phone || !password) {
+    if (
+      !name ||
+      !email ||
+      !phone ||
+      !password ||
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      typeof name !== 'string' ||
+      typeof phone !== 'string'
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields: name, email, phone, and password.',
+        message: 'Please provide valid details: name, email, phone, and password must be strings.',
       });
     }
 
@@ -109,10 +118,15 @@ const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (
+      !email ||
+      !password ||
+      typeof email !== 'string' ||
+      typeof password !== 'string'
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide email and password.',
+        message: 'Please provide a valid email and password.',
       });
     }
 

@@ -39,7 +39,7 @@ const updateUserProfile = async (req, res, next) => {
       state,
       pincode,
       password,
-    } = req.body;
+    } = req.body; 
 
     if (name) user.name = name;
     if (phone) user.phone = phone;

@@ -12,6 +12,7 @@ const {
 } = require('../controllers/materialController');
 const { protect, authorize, optionalAuth } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
+const { validateUploadedImages } = upload;
 
 router.get('/featured', getFeaturedMaterials);
 router.get('/my', protect, authorize('seller', 'admin'), getMyMaterials);
@@ -23,6 +24,7 @@ router
     protect,
     authorize('seller', 'admin'),
     upload.array('images', 6),
+    validateUploadedImages,
     createMaterial
   );
 
@@ -33,6 +35,7 @@ router
     protect,
     authorize('seller', 'admin'),
     upload.array('images', 6),
+    validateUploadedImages,
     updateMaterial
   )
   .delete(protect, authorize('seller', 'admin'), deleteMaterial);

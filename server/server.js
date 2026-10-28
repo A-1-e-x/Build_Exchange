@@ -15,6 +15,7 @@ if (fs.existsSync(path.join(__dirname, '.env'))) {
 
 const connectDB = require('./config/db');
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
+const { sanitizeMiddleware } = require('./middleware/sanitizeMiddleware');
 
 // Route files
 const authRoutes = require('./routes/authRoutes');
@@ -70,6 +71,9 @@ app.use(
 // Body parsers
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Sanitize inputs against NoSQL injection
+app.use(sanitizeMiddleware);
 
 // HTTP request logger
 if (process.env.NODE_ENV !== 'test') {

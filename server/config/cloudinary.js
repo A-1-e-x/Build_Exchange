@@ -50,8 +50,17 @@ const saveToLocalUploads = (file) => {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
-  const ext = path.extname(file.originalname || '') || '.jpg';
-  const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+  // Derive safe extension from verified detectedFormat or mimetype, NEVER untrusted originalname
+  let safeExt = '.jpg';
+  if (file.detectedFormat === 'png' || file.mimetype === 'image/png') {
+    safeExt = '.png';
+  } else if (file.detectedFormat === 'webp' || file.mimetype === 'image/webp') {
+    safeExt = '.webp';
+  } else {
+    safeExt = '.jpg';
+  }
+
+  const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${safeExt}`;
   const filePath = path.join(uploadsDir, filename);
 
   fs.writeFileSync(filePath, file.buffer);

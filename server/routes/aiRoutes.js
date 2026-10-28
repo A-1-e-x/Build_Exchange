@@ -11,10 +11,11 @@ const {
 } = require('../controllers/aiController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
+const { validateUploadedImages } = upload;
 
 // Public/seller analysis endpoints (accepts multipart/form-data 'image' or json 'imageUrl')
-router.post('/analyze-image', protect, upload.single('image'), analyzeImageHandler);
-router.post('/verify-image', protect, upload.single('image'), verifyImageHandler);
+router.post('/analyze-image', protect, upload.single('image'), validateUploadedImages, analyzeImageHandler);
+router.post('/verify-image', protect, upload.single('image'), validateUploadedImages, verifyImageHandler);
 
 // Material-specific analysis & verification lookup
 router.get('/material/:materialId', protect, getMaterialAnalysis);

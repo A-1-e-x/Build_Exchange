@@ -201,38 +201,71 @@ const acceptRequest = async (req, res, next) => {
       });
     }
 
+    // Atomically lock and transition request from 'pending' to 'accepted'
+    const lockedRequest = await Request.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        status: 'pending',
+      },
+      {
+        $set: {
+          status: 'accepted',
+          sellerNote: sellerMessage || 'Pickup scheduled',
+        },
+      },
+      { new: true }
+    );
+
+    if (!lockedRequest) {
+      const refreshedReq = await Request.findById(req.params.id);
+      return res.status(400).json({
+        success: false,
+        message: refreshedReq && refreshedReq.status === 'accepted'
+          ? 'This request has already been accepted.'
+          : 'Cannot accept request in its current status.',
+      });
+    }
+
     const unitPrice = material.price;
     const totalPrice = request.quantity * unitPrice;
 
     // Create Order with Pickup Scheduled status
     // NOTE: DO NOT reduce material quantity yet! Only reduced on order completion.
-    const newOrder = await Order.create({
-      buyerId: request.buyerId._id,
-      sellerId: request.sellerId,
-      materialId: material._id,
-      requestId: request._id,
-      quantity: request.quantity,
-      unitPrice,
-      totalPrice,
-      status: 'Pickup Scheduled',
-      pickupAddress: pickupAddress.trim(),
-      pickupCity: pickupCity.trim(),
-      pickupDistrict: (pickupDistrict || material.district || '').trim(),
-      pickupPincode: (pickupPincode || material.pincode || '').trim(),
-      pickupLandmark: (pickupLandmark || '').trim(),
-      pickupDate: pickupDate.trim(),
-      pickupStartTime: pickupStartTime.trim(),
-      pickupEndTime: pickupEndTime.trim(),
-      sellerMessage: (sellerMessage || '').trim(),
-      acceptedAt: new Date(),
-      pickupScheduledAt: new Date(),
-    });
+    let newOrder;
+    try {
+      newOrder = await Order.create({
+        buyerId: request.buyerId._id,
+        sellerId: request.sellerId,
+        materialId: material._id,
+        requestId: request._id,
+        quantity: request.quantity,
+        unitPrice,
+        totalPrice,
+        status: 'Pickup Scheduled',
+        pickupAddress: pickupAddress.trim(),
+        pickupCity: pickupCity.trim(),
+        pickupDistrict: (pickupDistrict || material.district || '').trim(),
+        pickupPincode: (pickupPincode || material.pincode || '').trim(),
+        pickupLandmark: (pickupLandmark || '').trim(),
+        pickupDate: pickupDate.trim(),
+        pickupStartTime: pickupStartTime.trim(),
+        pickupEndTime: pickupEndTime.trim(),
+        sellerMessage: (sellerMessage || '').trim(),
+        acceptedAt: new Date(),
+        pickupScheduledAt: new Date(),
+      });
+    } catch (orderErr) {
+      // Revert request status if order creation failed
+      await Request.findByIdAndUpdate(lockedRequest._id, {
+        status: 'pending',
+        sellerNote: '',
+      });
+      throw orderErr;
+    }
 
-    // Update request
-    request.status = 'accepted';
-    request.orderId = newOrder._id;
-    request.sellerNote = sellerMessage || 'Pickup scheduled';
-    await request.save();
+    // Link created order to request
+    lockedRequest.orderId = newOrder._id;
+    await lockedRequest.save();
 
     // Create Buyer Notification
     await Notification.create({

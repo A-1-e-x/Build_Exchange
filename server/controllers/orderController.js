@@ -420,39 +420,54 @@ const completeOrder = async (req, res, next) => {
       });
     }
 
-    // Check Current Material Stock
-    const material = await Material.findById(order.materialId);
-    if (!material) {
-      return res.status(404).json({
-        success: false,
-        message: 'The material listing for this order no longer exists.',
-      });
-    }
-
-    // Validation: prevent overselling
-    if (material.quantity < order.quantity) {
-      return res.status(400).json({
-        success: false,
-        message: `Insufficient quantity available. Available: ${material.quantity}, Requested: ${order.quantity}`,
-      });
-    }
-
-    // Atomic update to subtract quantity securely
-    const updatedMaterial = await Material.findOneAndUpdate(
+    // Atomically transition order status to 'Completed' to lock against concurrent completion requests
+    const lockedOrder = await Order.findOneAndUpdate(
       {
-        _id: order.materialId,
-        quantity: { $gte: order.quantity },
+        _id: order._id,
+        status: { $nin: ['Completed', 'Cancelled'] },
       },
       {
-        $inc: { quantity: -order.quantity },
+        $set: {
+          status: 'Completed',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      },
+      { new: true }
+    );
+
+    if (!lockedOrder) {
+      const refreshedOrder = await Order.findById(order._id);
+      return res.status(400).json({
+        success: false,
+        message: refreshedOrder && refreshedOrder.status === 'Completed'
+          ? 'This order is already marked as completed.'
+          : 'Cannot complete order in its current status.',
+      });
+    }
+
+    // Check Current Material Stock & Atomic update to subtract quantity securely
+    const updatedMaterial = await Material.findOneAndUpdate(
+      {
+        _id: lockedOrder.materialId,
+        quantity: { $gte: lockedOrder.quantity },
+      },
+      {
+        $inc: { quantity: -lockedOrder.quantity },
       },
       { new: true }
     );
 
     if (!updatedMaterial) {
+      // Rollback order status if stock was insufficient
+      await Order.findByIdAndUpdate(lockedOrder._id, {
+        status: order.status,
+        completedAt: null,
+        updatedAt: new Date(),
+      });
       return res.status(400).json({
         success: false,
-        message: `Insufficient quantity available. Current available stock is less than ${order.quantity}.`,
+        message: `Insufficient quantity available. Current stock is less than ${lockedOrder.quantity}.`,
       });
     }
 
@@ -462,15 +477,9 @@ const completeOrder = async (req, res, next) => {
       await updatedMaterial.save();
     }
 
-    // Update order status
-    order.status = 'Completed';
-    order.completedAt = new Date();
-    order.updatedAt = new Date();
-    await order.save();
-
     // Also update linked request if present
-    if (order.requestId) {
-      await Request.findByIdAndUpdate(order.requestId, {
+    if (lockedOrder.requestId) {
+      await Request.findByIdAndUpdate(lockedOrder.requestId, {
         status: 'completed',
       });
     }
